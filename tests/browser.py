@@ -3,7 +3,8 @@ import subprocess, json, time, pathlib, traceback
 from playwright.sync_api import sync_playwright
 from PIL import Image, ImageStat
 ROOT=pathlib.Path(__file__).resolve().parents[1]
-OUT=pathlib.Path('/tmp/makefun/fps-browser');OUT.mkdir(exist_ok=True)
+import os
+OUT=pathlib.Path(os.environ.get('TIDEBREAK_TEST_OUTPUT','/tmp/makefun/fps-browser'));OUT.mkdir(parents=True,exist_ok=True)
 checks=[];errors=[];console=[];requests=[]
 def check(name,ok,detail=None):
     checks.append({'name':name,'passed':bool(ok),'detail':detail});print(name,ok,detail,flush=True)

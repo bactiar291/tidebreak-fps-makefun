@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
-import {SITE, floorY, move, wallDistance, boxRay, route} from './map.js';
+import {SITE, floorY, move, wallDistance, boxRay} from './map.js';
+import {bot} from './bots.js';
 export const DT=1/60;
 export const WEAPONS={
   pistol:{name:'Kestrel P9',label:'PISTOL',price:0,mag:12,reserve:48,damage:29,interval:.28,reload:1.35,spread:.008,kick:.014,auto:false},
@@ -8,7 +9,7 @@ export const WEAPONS={
 };
 export function random(s){s.seed=(Math.imul(s.seed,1664525)+1013904223)>>>0;return s.seed/4294967296;}
 export function input(){return {forward:0,strafe:0,fire:false,pressed:false,crouch:false,walk:false,interact:false,aim:false};}
-function actor(id,team,x,z){return {id,team,name:['YOU','MICA','RUSK','BRINE','FLINT'][id],x,z,px:x,pz:z,y:0,yaw:team===0?0:Math.PI,pitch:0,vx:0,vz:0,hp:100,armor:50,alive:true,crouch:false,weapon:'pistol',ammo:12,reserve:48,cool:0,reload:0,recoil:0,shots:0,kills:0,step:0,flash:0,hurt:0,action:0,lastDamage:-10,seen:-1,reaction:0,memory:0,heardX:x,heardZ:z,navX:x,navZ:z,navTime:0,hold:0,routeIndex:0,brain:0};}
+function actor(id,team,x,z){return {id,team,name:['YOU','MICA','RUSK','BRINE','FLINT'][id],x,z,px:x,pz:z,y:0,yaw:team===0?0:Math.PI,pitch:0,vx:0,vz:0,hp:100,armor:50,alive:true,crouch:false,weapon:'pistol',ammo:12,reserve:48,cool:0,reload:0,recoil:0,shots:0,kills:0,step:0,flash:0,hurt:0,action:0,lastDamage:-10,seen:-1,reaction:0,memory:0,heardX:x,heardZ:z,navX:x,navZ:z,navTime:0,hold:0,routeIndex:0,role:['player','planter','anchor','pier','hall'][id],intent:'patrol',contact:'',goalX:x,goalZ:z,stuck:0,recoveries:0};}
 export function createState(seed=517,difficulty='normal',mode='match'){
   const s={seed,initialSeed:seed,difficulty,mode,phase:'menu',paused:false,tick:0,time:0,acc:0,round:0,score:[0,0],money:2400,roundTime:85,phaseTime:0,result:'',winner:-1,awards:0,message:'',messageTime:0,actors:[],bomb:{planted:false,time:30,progress:0,defuse:0,owner:-1,defuser:-1},smokes:Array.from({length:3},()=>({active:false,x:0,z:0,life:0,age:0})),grenades:1,events:Array.from({length:96},()=>({seq:0,type:'',x:0,y:0,z:0,tx:0,ty:0,tz:0,id:0,head:false})),eventSeq:0,feed:[],stats:{shots:0,hits:0,heads:0},input:input(),damageMark:0};
   startRound(s);s.phase='menu';return s;
@@ -56,7 +57,7 @@ export function sees(s,a,b){
   const y=floorY(a.x,a.z)+(a.crouch?1.05:1.55),by=floorY(b.x,b.z)+(b.crouch?.8:1.3),dy=by-y,dist=Math.hypot(dx,dy,dz);
   return wallDistance(a.x,y,a.z,dx/dist,dy/dist,dz/dist,dist)>=dist-.05;
 }
-export function noise(s,a,radius){for(const b of s.actors)if(b.alive&&b.team!==a.team&&Math.hypot(a.x-b.x,a.z-b.z)<radius){b.memory=3;b.heardX=a.x;b.heardZ=a.z;}}
+export function noise(s,a,radius){for(const b of s.actors)if(b.alive&&b.team!==a.team&&Math.hypot(a.x-b.x,a.z-b.z)<radius){if(b.seen<0){b.memory=3;b.heardX=a.x;b.heardZ=a.z;b.contact='sound';}}}
 export function hurt(s,a,damage,by,head=false){
   if(!a.alive||s.phase!=='live')return;
   const absorb=head?0:Math.min(a.armor,damage*.42);a.armor-=absorb;a.hp=Math.max(0,a.hp-(damage-absorb));a.hurt=.28;a.lastDamage=s.time;a.action=0;
@@ -133,39 +134,7 @@ function objective(s){
   if(attackers===0&&!b.planted){award(s,1,'ATTACKERS ELIMINATED');return;}
   if(s.roundTime<=0&&!b.planted)award(s,1,'TIME EXPIRED');
 }
-const POSTS={2:[[3,-16],[1,-12]],3:[[-15,-20],[-18,-8]],4:[[13,-7],[13,2]]};
-function bot(s,a){
-  let target=null,nearest=Infinity;
-  for(const b of s.actors)if(b.alive&&a.team!==b.team&&sees(s,a,b)){const d=Math.hypot(a.x-b.x,a.z-b.z);if(d<nearest){nearest=d;target=b;}}
-  if(target){
-    if(a.seen!==target.id){a.seen=target.id;a.reaction=s.difficulty==='easy'?.65:.4;}
-    a.memory=3;a.heardX=target.x;a.heardZ=target.z;a.reaction-=DT;
-    a.yaw=Math.atan2(-(target.x-a.x),-(target.z-a.z));
-    const ty=floorY(target.x,target.z)+(target.crouch?.75:1.2),sy=floorY(a.x,a.z)+1.55;
-    a.pitch=Math.atan2(ty-sy,nearest);a.vx*=.75;a.vz*=.75;
-    if(a.reaction<=0&&a.ammo>0)fire(s,a,a.yaw,a.pitch,true);else if(a.ammo===0)reload(s,a);
-    a.navTime=0;return;
-  }
-  a.seen=-1;a.memory=Math.max(0,a.memory-DT);a.pitch=0;
-  if(a.ammo<4)reload(s,a);
-  let tx,tz;
-  if(s.bomb.planted){
-    if(a.team===1){tx=SITE.x;tz=SITE.z;}
-    else{tx=-1;tz=-14;}
-  }else if(a.team===0){
-    // Mica first uses the protected canal, then plants if the player chooses another route.
-    if(a.routeIndex===0&&Math.hypot(a.x+6,a.z+11)>.7){tx=-6;tz=-11;}else{a.routeIndex=1;tx=SITE.x;tz=SITE.z;}
-  }else if(a.memory>0){tx=a.heardX;tz=a.heardZ;}
-  else{
-    const posts=POSTS[a.id];
-    tx=posts[a.routeIndex%2][0];tz=posts[a.routeIndex%2][1];
-    if(Math.hypot(a.x-tx,a.z-tz)<.7){a.hold+=DT;a.yaw=Math.PI+Math.sin(s.time*.7+a.id)*.6;a.vx=0;a.vz=0;if(a.hold>4){a.routeIndex++;a.hold=0;}return;}
-  }
-  if(Math.hypot(a.x-tx,a.z-tz)<(s.bomb.planted&&a.team===1?1.6:.65)){a.vx=0;a.vz=0;return;}
-  a.navTime-=DT;if(a.navTime<=0){route(a,tx,tz);a.navTime=.22;}
-  const dx=a.navX-a.x,dz=a.navZ-a.z,d=Math.hypot(dx,dz);
-  if(d>.08){a.yaw=Math.atan2(-dx,-dz);a.vx=dx/d*2.3;a.vz=dz/d*2.3;move(a,a.vx*DT,a.vz*DT);}
-}
+const botActions={sees,fire,reload};
 export function step(s){
   if(s.paused||s.phase==='menu'||s.phase==='match')return;
   s.tick++;s.time+=DT;s.messageTime=Math.max(0,s.messageTime-DT);s.damageMark=Math.max(0,s.damageMark-DT);
@@ -183,7 +152,7 @@ export function step(s){
       const accel=len>0?DT*12:DT*17;a.vx+=(tx-a.vx)*accel;a.vz+=(tz-a.vz)*accel;
       move(a,a.vx*DT,a.vz*DT);
       if(i.fire&&(WEAPONS[a.weapon].auto||i.pressed)&&!i.interact)fire(s,a);i.pressed=false;
-    }else bot(s,a);
+    }else bot(s,a,botActions);
     const speed=Math.hypot(a.vx,a.vz);a.step+=speed*DT;
     if(a.step>1.7){a.step=0;event(s,'step',a);noise(s,a,a.crouch||a.id===0&&s.input.walk?2:10);}
     a.y=floorY(a.x,a.z);

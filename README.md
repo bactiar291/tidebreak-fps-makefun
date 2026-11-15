@@ -40,17 +40,19 @@ PIER DRILL and RELAY DRILL are public menu options, not screenshot cheats. They 
 
 ## Architecture and verification
 
-`game/src/map.js` holds the shared render/collision plan and a waypoint graph with all-pairs next-hop routing. `sim.js` owns centralized state and a seeded 60 Hz fixed-step simulation, independent of the renderer. Bots use bounded range and field of view, wall and smoke occlusion, reaction delay, remembered sounds, route traversal and hold positions. `view.js` creates economical geometry, a capped DPR 1 renderer, interpolated actor positions, articulated reload/recoil and pooled tracers, impact flashes and smoke. `audio.js` uses reusable WebAudio voices, muted until the user explicitly enables sound. `main.js` handles browser input and state-derived UI. `window.tidebreak.state()` returns a detached read-only snapshot for QA; there is no gameplay mutation interface.
+`game/src/map.js` holds the shared render/collision plan and a waypoint graph with all-pairs next-hop routing. `sim.js` owns centralized state and a seeded 60 Hz fixed-step simulation, independent of the renderer. `bots.js` owns tactical decisions: Rusk anchors the relay, Brine rotates along the pier, and Flint patrols the hall. Guards investigate expiring sound coordinates and pursue the last visible position without tracking an unseen opponent. The anchor ignores distant distractions. Bots seek nearby reachable cover when reloading under visual contact and retain that cover goal for the whole reload, including after reaching cover or losing sight of the opponent. A planted relay assigns one surviving defender to disarm while the others cover separate approaches; the assignment transfers if that defender dies. Routes replan after blocked progress. Bounded range, field of view, wall/smoke occlusion and reaction delay apply before shooting. `view.js` creates economical geometry, a capped DPR 1 renderer, interpolated actor positions, articulated reload/recoil and pooled tracers, impact flashes and smoke. `audio.js` uses reusable WebAudio voices, muted until the user explicitly enables sound. `main.js` handles browser input and state-derived UI. `window.tidebreak.state()` returns a detached read-only snapshot for QA; there is no gameplay mutation interface.
 
 Run pure simulation invariants:
 
-    node --test tests/sim.test.js
+    node --test tests/sim.test.js tests/ai.test.js
+
+The saved post-fix test run passed 42 simulation checks (26 original and 16 tactical regressions), including waypoint routes to the relay, bounded blocked-route replanning, hidden-contact memory, smoke/wall vision, covering/defuse assignment, friendly-body bullet blocking and fixed-step seed consistency. Four reload-cover regression cases fail in the saved pre-fix run and pass after the fix: Brine and Flint retain their goal through 99 simulation steps, hold reached cover while an unseen opponent moves, release the goal on reload completion, and reacquire visible contact with reaction delay. These saved results were inspected during the documentation handoff, not rerun. Existing navigation may still oscillate after a distraction; this inherited limitation is not a claim of universal recovery. A previous normal-difficulty browser operation completed with TIDE 0 : 3 GUARD; this is an observed loss, not a claim of competitive balance.
 
 The browser regression script requires Python Playwright and Pillow already installed, plus Chrome at `/usr/bin/google-chrome`:
 
     /root/venv/bin/python3 tests/browser.py
 
-It owns a localhost random-port server, exercises normal UI and mouse/keyboard input, records real frames and writes `/tmp/makefun/fps-browser/report.json`. It stops its server in a finally block. CPU-only SwiftShader test timing is not a desktop FPS benchmark.
+It owns a localhost random-port server, exercises normal UI and mouse/keyboard input, records real frames and writes `/tmp/makefun/fps-browser/report.json`. Set `TIDEBREAK_TEST_OUTPUT` to preserve reports from previous runs. It stops its server in a finally block. The saved post-fix browser report passed all 29 checks with no page errors or unexpected requests; this report was inspected, not rerun during the documentation handoff. CPU-only SwiftShader test timing is not a desktop FPS benchmark.
 
 Produce the competition artifact in a new empty directory (Node 22.18+ standard library only):
 
@@ -58,7 +60,9 @@ Produce the competition artifact in a new empty directory (Node 22.18+ standard 
 
 The default without that variable is `/output` as required by the competition. `--prepare` copies only the static game for initial screenshot preparation; the default always creates the full dossier. A nonempty output target is refused to avoid stale files. No writes occur outside the specified output.
 
-`tests/gates.ts` reproduces published file/reference/image/dossier checks locally, using Node's bundled Acorn via `--expose-internals` for AST parsing. It is a local validator, not the sealed official scorer. The image validator report `/tmp/makefun/fps-images.json` is produced during handoff verification. No official judge score is claimed.
+`tests/gates.ts` reproduces published file/reference/image/dossier checks locally, using Node's bundled Acorn via `--expose-internals` for AST parsing. It is a local validator, not the sealed official scorer. Set `TIDEBREAK_IMAGE_REPORT` to the Pillow image-validation report for the current artifact (default `/tmp/makefun/fps-images.json`). No official judge score is claimed.
+
+The current screenshots are genuine previous pre-fix captures, retained without recapture during this handoff: direct 1280×720 browser JPEGs of normal-match combat, the public relay drill after arming, normal requisitions, and a completed normal operation. Captures are unedited and do not demonstrate the reload-cover fix. The combat frame was checked against living-player snapshots before and after capture, a weapon render pass, and in-frame unobstructed opponent projections. Temporary read-only browser instrumentation confirmed separate world and weapon passes; the public render counter reports only the last pass. No rendering defect was established. The parent visually inspected the previous cover and confirmed a visible weapon, a distinguishable character, and a readable main HUD. That limited screenshot inspection does not establish hardware performance, overall visual quality, or ranking; final image review remains a parent task.
 
 ## Limits and provenance
 
