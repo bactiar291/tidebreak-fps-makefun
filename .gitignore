@@ -1,0 +1,13 @@
+output/
+out/
+.cache/
+node_modules/
+__pycache__/
+*.pyc
+.env
+.env.*
+*.key
+*.pem
+transcripts/
+*.jsonl
+.DS_Store
